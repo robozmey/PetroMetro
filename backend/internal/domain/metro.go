@@ -12,6 +12,7 @@ type Station struct {
 	X      int    `json:"x"`
 	Y      int    `json:"y"`
 	CityID int    `json:"-"`
+	Year   int    `json:"year,omitempty"`
 }
 
 type MetroLine struct {
