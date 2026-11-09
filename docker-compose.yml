@@ -10,13 +10,23 @@ services:
       - "5433:5432"
     volumes:
       - podzemka-postgres-data:/var/lib/postgresql/data
-      - ./backend/migrations:/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U podzemka -d podzemka"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/migrations:/migrations:ro
+    entrypoint: ["migrate", "-path", "/migrations", "-database", "postgres://podzemka:podzemka@db:5432/podzemka?sslmode=disable"]
+    command: ["up"]
 
 volumes:
   podzemka-postgres-data:

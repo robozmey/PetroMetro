@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/robozmey/podzemka/backend/internal/domain"
 	"io"
 	"os"
 	"sort"
@@ -31,25 +32,9 @@ type overpassElement struct {
 	Tags map[string]string `json:"tags"`
 }
 
-type outputStation struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	X    int    `json:"x"`
-	Y    int    `json:"y"`
-	Year int    `json:"year,omitempty"`
-}
-
-type outputLine struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Color    string `json:"color"`
-	Stations []int  `json:"stations"`
-}
-
-type outputSchema struct {
-	Stations []outputStation `json:"stations"`
-	Lines    []outputLine    `json:"lines"`
-}
+type outputStation = domain.Station
+type outputLine = domain.MetroLine
+type outputSchema = domain.MetroContent
 
 type importedStation struct {
 	osmID int64

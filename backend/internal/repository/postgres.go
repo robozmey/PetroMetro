@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -52,7 +53,7 @@ func (r *PostgresRepository) ListCities(ctx context.Context) ([]domain.City, err
 	}
 	defer rows.Close()
 
-	var cities []domain.City
+	cities := make([]domain.City, 0)
 	for rows.Next() {
 		var city domain.City
 		if err := rows.Scan(&city.ID, &city.Name, &city.Slug); err != nil {
@@ -74,6 +75,7 @@ func (r *PostgresRepository) GetCityBySlug(ctx context.Context, slug string) (do
 		FROM cities
 		WHERE slug = $1
 	`, slug).Scan(&city.ID, &city.Name, &city.Slug)
+
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.City{}, ErrNotFound
 	}
@@ -84,76 +86,81 @@ func (r *PostgresRepository) GetCityBySlug(ctx context.Context, slug string) (do
 	return city, nil
 }
 
-func (r *PostgresRepository) ListStationsByCityID(ctx context.Context, cityID int) ([]domain.Station, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, x, y, city_id
-		FROM stations
-		WHERE city_id = $1
-		ORDER BY id
-	`, cityID)
+func (r *PostgresRepository) GetSchemaBySlug(ctx context.Context, slug string) (domain.MetroSchema, error) {
+	var schema domain.MetroSchema
+	var data []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT c.id, c.name, c.slug, m.schema
+		FROM cities c
+		JOIN metro_schemas m ON m.city_id = c.id
+		WHERE c.slug = $1
+	`, slug).Scan(&schema.City.ID, &schema.City.Name, &schema.City.Slug, &data)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return schema, ErrNotFound
+	}
 	if err != nil {
-		return nil, wrapPostgresError("list stations by city id", err)
-	}
-	defer rows.Close()
-
-	var stations []domain.Station
-	for rows.Next() {
-		var station domain.Station
-		if err := rows.Scan(&station.ID, &station.Name, &station.X, &station.Y, &station.CityID); err != nil {
-			return nil, wrapPostgresError("scan station", err)
-		}
-		stations = append(stations, station)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, wrapPostgresError("iterate stations", err)
+		return schema, wrapPostgresError("get schema", err)
 	}
 
-	return stations, nil
+	var content domain.MetroContent
+	if err := json.Unmarshal(data, &content); err != nil {
+		return schema, fmt.Errorf("decode schema: %w", err)
+	}
+	if err := content.Validate(); err != nil {
+		return schema, fmt.Errorf("invalid stored schema: %w", err)
+	}
+
+	schema.Stations, schema.Lines = content.Stations, content.Lines
+	return schema, nil
 }
 
-func (r *PostgresRepository) ListLinesByCityID(ctx context.Context, cityID int) ([]domain.MetroLine, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT l.id, l.name, l.color, ls.station_id
-		FROM lines l
-		LEFT JOIN line_stations ls ON ls.line_id = l.id AND ls.city_id = l.city_id
-		WHERE l.city_id = $1
-		ORDER BY l.id, ls.position
-	`, cityID)
+func (r *PostgresRepository) SaveSchema(ctx context.Context, schema domain.MetroSchema) error {
+	if schema.City.Name == "" || schema.City.Slug == "" {
+		return errors.New("city name and slug are required")
+	}
+
+	content := domain.MetroContent{Stations: schema.Stations, Lines: schema.Lines}
+	if err := content.Validate(); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(content)
 	if err != nil {
-		return nil, wrapPostgresError("list lines by city id", err)
-	}
-	defer rows.Close()
-
-	var lines []domain.MetroLine
-	var currentLineID int
-	for rows.Next() {
-		var lineID int
-		var name string
-		var color string
-		var stationID sql.NullInt64
-		if err := rows.Scan(&lineID, &name, &color, &stationID); err != nil {
-			return nil, wrapPostgresError("scan line", err)
-		}
-
-		if len(lines) == 0 || currentLineID != lineID {
-			lines = append(lines, domain.MetroLine{
-				ID:       lineID,
-				Name:     name,
-				Color:    color,
-				Stations: []int{},
-			})
-			currentLineID = lineID
-		}
-
-		if stationID.Valid {
-			lines[len(lines)-1].Stations = append(lines[len(lines)-1].Stations, int(stationID.Int64))
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, wrapPostgresError("iterate lines", err)
+		return fmt.Errorf("encode schema: %w", err)
 	}
 
-	return lines, nil
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return wrapPostgresError("begin save schema", err)
+	}
+	defer tx.Rollback()
+
+	var cityID int
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO cities (name, slug) 
+		VALUES ($1, $2)
+ 		ON CONFLICT (slug) 
+		DO UPDATE SET name = EXCLUDED.name 
+		RETURNING id
+		`, schema.City.Name, schema.City.Slug).Scan(&cityID)
+
+	if err != nil {
+		return wrapPostgresError("save city", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO metro_schemas (city_id, schema) 
+		VALUES ($1, $2::jsonb)
+ 		ON CONFLICT (city_id) 
+		DO UPDATE SET schema = EXCLUDED.schema, 
+					  updated_at = now()
+		`, cityID, string(data))
+
+	if err != nil {
+		return wrapPostgresError("save schema", err)
+	}
+	return tx.Commit()
 }
 
 func wrapPostgresError(operation string, err error) error {
