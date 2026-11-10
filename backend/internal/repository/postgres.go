@@ -68,6 +68,15 @@ func (r *PostgresRepository) ListCities(ctx context.Context) ([]domain.City, err
 	return cities, nil
 }
 
+func (r *PostgresRepository) CityExists(ctx context.Context, slug string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cities WHERE slug = $1)`, slug).Scan(&exists)
+	if err != nil {
+		return false, wrapPostgresError("check city exists", err)
+	}
+	return exists, nil
+}
+
 func (r *PostgresRepository) GetCityBySlug(ctx context.Context, slug string) (domain.City, error) {
 	var city domain.City
 	err := r.db.QueryRowContext(ctx, `
