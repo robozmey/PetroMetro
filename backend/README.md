@@ -13,10 +13,8 @@
 
 ```powershell
 docker compose up -d db
-docker compose run --rm migrate
 cd backend
 $env:DATABASE_URL = 'postgres://podzemka:podzemka@localhost:5433/podzemka?sslmode=disable'
-go run ./cmd/seedschemas
 go run ./cmd/api
 ```
 
