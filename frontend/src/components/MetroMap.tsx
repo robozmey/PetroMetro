@@ -206,7 +206,7 @@ export function MetroMap({ schema, city }: MetroMapProps) {
             height="130"
             onPointerLeave={() => setHoveredStation(null)}
           >
-            <div xmlns="http://www.w3.org/1999/xhtml" className="station__tooltip-content">
+            <div className="station__tooltip-content">
               <strong>{hoveredStation.name}</strong>
               <p>
                 Линии: {schema.lines

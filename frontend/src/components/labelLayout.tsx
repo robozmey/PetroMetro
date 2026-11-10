@@ -310,6 +310,13 @@ function calculateCost(
 
     let cost = 0
 
+    if (rect.x < 0 ||
+        rect.y < 0 ||
+        rect.x + rect.width > 700 ||
+        rect.y + rect.height > 420) {
+            cost += 1_000_000
+        }
+
     // Пересечение с др подписями
     for (const other of otherRects) {
         cost += overlapArea(rect, other) * 1000
