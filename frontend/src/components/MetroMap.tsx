@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import YearTimeline, {
   CITY_YEAR_RANGES,
@@ -6,6 +6,7 @@ import YearTimeline, {
 } from './YearTimeline'
 import type { MetroSchema, Station } from '../types/metro'
 import './MetroMap.css'
+import { arrangeLabels, type LabelPlacement } from './labelLayout'
 
 type MetroMapProps = {
   schema: MetroSchema
@@ -17,6 +18,8 @@ export function MetroMap({ schema, city }: MetroMapProps) {
   const [selectedYear, setSelectedYear] = useState(
     CITY_YEAR_RANGES[city].end,
   )
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [labelPlacements, setLabelPlacements] = useState<LabelPlacement[]>([])
 
   useEffect(() => {
     setSelectedYear(CITY_YEAR_RANGES[city].end)
@@ -34,7 +37,84 @@ export function MetroMap({ schema, city }: MetroMapProps) {
     (station) => station.year == null || station.year <= year,
   )
   const stationById = new Map(visibleStations.map((station) => [station.id, station]),)
+  useLayoutEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
 
+    const textElements = svg.querySelectorAll<SVGTextElement>(
+      '.station__label',
+    )
+
+    const textById = new Map(
+      Array.from(textElements).map((element) => [
+        Number(element.dataset.stationId),
+        element,
+      ]),
+    )
+
+    const labels = visibleStations.flatMap((station) => {
+      const element = textById.get(station.id)
+      if (!element) return []
+
+      const bounds = element.getBBox()
+      const originalX = station.x
+      const originalY = station.y + 5.6
+      const baselineOffsetY =
+        bounds.y - Number(element.getAttribute('y'))
+
+      return [{
+        id: station.id,
+        stationX: station.x,
+        stationY: station.y,
+        width: bounds.width,
+        height: bounds.height,
+        originalX,
+        originalY,
+        originalRect: {
+          x: originalX - bounds.width / 2,
+          y: originalY + baselineOffsetY,
+          width: bounds.width,
+          height: bounds.height,
+        },
+        baselineOffsetY,
+      }]
+    })
+
+    const stationObstacles = visibleStations.map((station) => ({
+      id: station.id,
+      x: station.x,
+      y: station.y,
+      radius: 2,
+    }))
+
+    const lineSegments = schema.lines.flatMap((line) => {
+      const points = line.stations
+        .map((id) => stationById.get(id))
+        .filter((station): station is Station => station !== undefined)
+
+      return points.slice(1).map((point, index) => ({
+        x1: points[index].x,
+        y1: points[index].y,
+        x2: point.x,
+        y2: point.y,
+      }))
+    })
+
+    const result = arrangeLabels(
+      labels,
+      stationObstacles,
+      lineSegments,
+    )
+
+    setLabelPlacements(result.placements)
+  }, [schema, year])
+
+  const placementById = new Map(
+    labelPlacements.map((placement) => [
+      placement.id,
+      placement,
+    ]),
+  )
   return (
     <div className="metro-map-layout">
       <YearTimeline
@@ -47,6 +127,7 @@ export function MetroMap({ schema, city }: MetroMapProps) {
       />
 
       <svg
+        ref={svgRef}
         className="metro-map"
         viewBox="0 0 700 420"
         role="img"
@@ -92,12 +173,29 @@ export function MetroMap({ schema, city }: MetroMapProps) {
           )
         })}
 
-        {visibleStations.map((station) => (
-          <g key={station.id} className="station" data-station-id={station.id}>
-            <circle cx={station.x} cy={station.y} r="2" />
-            <text x={station.x} y={station.y + 5.6}>{station.name}</text>
-          </g>
-        ))}
+        {visibleStations.map((station) => {
+          const placement = placementById.get(station.id)
+
+          return (
+            <g
+              key={station.id}
+              className="station"
+              data-station-id={station.id}
+            >
+              <circle cx={station.x} cy={station.y} r="2" />
+
+              <text
+                className="station__label"
+                data-station-id={station.id}
+                x={placement?.x ?? station.x}
+                y={placement?.y ?? station.y + 5.6}
+                textAnchor={placement?.anchor ?? 'middle'}
+              >
+                {station.name}
+              </text>
+            </g>
+          )
+        })}
 
         {hoveredStation && (
           <foreignObject
