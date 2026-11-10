@@ -25,7 +25,6 @@
   fill: #172033;
   font-size: 2.8px;
   font-weight: 600;
-  text-anchor: middle;
   user-select: none;
 }
 
@@ -46,6 +45,7 @@
 .station__tooltip-content p {
   margin: 8px 0 0;
 }
+
 .metro-map-layout {
   display: flex;
   align-items: stretch;
@@ -54,11 +54,11 @@
   min-width: 0;
 }
 
-.metro-map-layout > .year-timeline {
+.metro-map-layout>.year-timeline {
   flex: 0 0 220px;
 }
 
-.metro-map-layout > .metro-map {
+.metro-map-layout>.metro-map {
   flex: 1 1 0;
   min-width: 0;
   width: 100%;
@@ -72,12 +72,12 @@
     flex-direction: column;
   }
 
-  .metro-map-layout > .year-timeline {
+  .metro-map-layout>.year-timeline {
     width: 100%;
     flex-basis: auto;
   }
 
-  .metro-map-layout > .metro-map {
+  .metro-map-layout>.metro-map {
     width: 100%;
   }
 }
